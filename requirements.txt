@@ -8,3 +8,4 @@ databases
 asyncpg
 python-dotenv
 gunicorn
+h11
