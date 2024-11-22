@@ -1,16 +1,24 @@
+import os
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
-# Import your Base metadata
-from main import Base
+# Import your SQLAlchemy Base metadata
+from main import Base  # Replace `main` with the module where your Base is defined
 
-# Alembic configuration
+# Alembic configuration object
 config = context.config
+
+# Configure logging
 fileConfig(config.config_file_name)
+
+# Dynamically fetch the database URL from the environment variable
+database_url = os.getenv("DATABASE_URL", "postgresql+psycopg2://postgres:password@localhost:5432/gibbor_tradingdb")
+config.set_main_option("sqlalchemy.url", database_url)
 
 # Set the metadata for autogenerate
 target_metadata = Base.metadata
+
 
 def run_migrations_offline():
     """Run migrations in 'offline' mode."""
@@ -21,6 +29,7 @@ def run_migrations_offline():
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
+
     with context.begin_transaction():
         context.run_migrations()
 
@@ -32,8 +41,10 @@ def run_migrations_online():
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
+
         with context.begin_transaction():
             context.run_migrations()
 
