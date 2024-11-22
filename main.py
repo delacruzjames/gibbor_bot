@@ -5,9 +5,12 @@ from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
 import time
 from sqlalchemy.exc import OperationalError
+import os
 
 # Database URL (use environment variables in production)
-DATABASE_URL = "postgresql+psycopg2://postgres:password@db:5432/gibbor_tradingdb"
+# DATABASE_URL = "postgresql+psycopg2://postgres:password@db:5432/gibbor_tradingdb"
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 
 # SQLAlchemy setup
 Base = declarative_base()

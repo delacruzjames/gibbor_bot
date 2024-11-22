@@ -6,3 +6,5 @@ pydantic
 alembic
 databases
 asyncpg
+python-dotenv
+gunicorn
