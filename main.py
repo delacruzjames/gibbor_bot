@@ -92,6 +92,11 @@ class PriceData(BaseModel):
 # Endpoint to add a trade
 @app.post("/trades")
 async def add_trade(data: TradeData, db: Session = Depends(get_db)):
+    """
+    Endpoint to handle incoming price data.
+    """
+    # Debug log: Print received data
+    print("Received Data:", data)
     trade_record = TradeRecord(symbol=data.symbols, action=data.action, lot_size=data.lot_size)
     db.add(trade_record)
     db.commit()
