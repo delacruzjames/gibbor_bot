@@ -1,3 +1,6 @@
 fastapi
 uvicorn
-requests
+sqlalchemy
+psycopg2-binary
+pydantic
+alembic

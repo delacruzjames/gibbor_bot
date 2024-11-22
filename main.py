@@ -1,77 +1,79 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from typing import List
+from fastapi import FastAPI, Depends
+from sqlalchemy import Column, Integer, String, Float, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
-import os
+import time
+from sqlalchemy.exc import OperationalError
 
+# Database URL (use environment variables in production)
+DATABASE_URL = "postgresql+psycopg2://postgres:password@db:5432/gibbor_tradingdb"
+
+# SQLAlchemy setup
+Base = declarative_base()
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Retry logic to wait for the database to be ready
+MAX_RETRIES = 5
+RETRY_INTERVAL = 5
+
+for attempt in range(MAX_RETRIES):
+    try:
+        # Attempt to connect to the database and create tables
+        Base.metadata.create_all(bind=engine)
+        print("Database connected and tables created successfully.")
+        break
+    except OperationalError:
+        if attempt < MAX_RETRIES - 1:
+            print(f"Database connection failed. Retrying in {RETRY_INTERVAL} seconds...")
+            time.sleep(RETRY_INTERVAL)
+        else:
+            print("Max retries reached. Exiting.")
+            raise
+
+# Dependency to get database session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# FastAPI app
 app = FastAPI()
 
-# File paths for communication with MT4
-TRADE_FILE = "trades.txt"
-RESPONSE_FILE = "responses.txt"
+# Database model
+class TradeRecord(Base):
+    __tablename__ = "trades"
 
-# Connection manager for WebSocket
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String, index=True)
+    action = Column(String)  # "buy" or "sell"
+    lot_size = Column(Float)
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-
-    async def send_message(self, message: str, websocket: WebSocket):
-        await websocket.send_text(message)
-
-    async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            await connection.send_text(message)
-
-manager = ConnectionManager()
-
-# Model for passing trade data
+# Pydantic model for trade data
 class TradeData(BaseModel):
     symbol: str
     action: str  # "buy" or "sell"
     lot_size: float
 
-# Endpoint to send trade commands to MT4 via file
-@app.post("/trade")
-async def trade(data: TradeData):
-    # Write trade command to file
-    with open(TRADE_FILE, "w") as trade_file:
-        trade_file.write(f"{data.action},{data.symbol},{data.lot_size}\n")
-    return {"status": "success", "action": data.action, "symbol": data.symbol}
+# Endpoint to add a trade
+@app.post("/trades")
+async def add_trade(data: TradeData, db: Session = Depends(get_db)):
+    trade_record = TradeRecord(symbol=data.symbol, action=data.action, lot_size=data.lot_size)
+    db.add(trade_record)
+    db.commit()
+    db.refresh(trade_record)
+    return {"status": "success", "trade": trade_record}
 
-# WebSocket endpoint
-@app.websocket("/ws/trading")
-async def trading_websocket(websocket: WebSocket):
-    await manager.connect(websocket)
-    try:
-        while True:
-            # Wait for message from MT4
-            data = await websocket.receive_text()
-            print(f"Message received: {data}")
-
-            # Process incoming data and respond
-            await manager.send_message(f"Server received: {data}", websocket)
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        print("Client disconnected")
-
-# Endpoint to get MT4 responses
-@app.get("/responses")
-async def get_responses():
-    # Read responses from MT4
-    if os.path.exists(RESPONSE_FILE):
-        with open(RESPONSE_FILE, "r") as response_file:
-            responses = response_file.readlines()
-        return {"responses": responses}
-    else:
-        return {"responses": []}
+# Endpoint to list all trades
+@app.get("/trades")
+async def get_trades(db: Session = Depends(get_db)):
+    trades = db.query(TradeRecord).all()
+    return {"trades": trades}
 
 # Test endpoint
 @app.get("/")
 async def root():
-    return {"message": "EA Bot API is running"}
+    return {"message": "FastAPI app with PostgreSQL is running"}

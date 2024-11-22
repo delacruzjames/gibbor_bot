@@ -12,3 +12,27 @@ services:
       - .:/app
     environment:
       - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql+psycopg2://postgres:password@db:5432/gibbor_tradingdb
+    depends_on:
+      db:
+        condition: service_healthy  # Wait for the database healthcheck
+
+  db:
+    image: postgres:16  # PostgreSQL version 16
+#    container_name: postgres_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: gibbor_tradingdb
+    ports:
+      - "5434:5432"  # Expose PostgreSQL on port 5434
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Persist PostgreSQL data
+    healthcheck:  # Add a healthcheck for PostgreSQL
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s  # Check every 5 seconds
+      timeout: 10s  # Timeout after 10 seconds
+      retries: 5    # Retry up to 5 times before failing
+
+volumes:
+  postgres_data:

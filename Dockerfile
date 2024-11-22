@@ -4,10 +4,18 @@ FROM python:3.12-slim
 # Set the working directory in the container
 WORKDIR /app
 
+# Install system dependencies required for psycopg2 and PostgreSQL
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    postgresql-client \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy the project files to the container
 COPY . /app
 
-# Install the Python dependencies
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose the port that the app runs on
