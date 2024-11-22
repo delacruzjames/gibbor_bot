@@ -13,8 +13,16 @@ config = context.config
 fileConfig(config.config_file_name)
 
 # Dynamically fetch the database URL from the environment variable
+# Retrieve the DATABASE_URL environment variable
 database_url = os.getenv("DATABASE_URL")
+
+# Transform Heroku's default 'postgres://' to 'postgresql+psycopg2://'
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+
+# Set the database URL dynamically in the Alembic config
 config.set_main_option("sqlalchemy.url", database_url)
+
 
 # Set the metadata for autogenerate
 target_metadata = Base.metadata
