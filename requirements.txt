@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+gunicorn
 sqlalchemy
 psycopg2-binary
 pydantic
@@ -7,5 +8,4 @@ alembic
 databases
 asyncpg
 python-dotenv
-gunicorn
 h11
