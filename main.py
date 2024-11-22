@@ -1,11 +1,12 @@
 from fastapi import FastAPI, Depends
-from sqlalchemy import Column, Integer, String, Float, create_engine
+from sqlalchemy import Column, Integer, String, Float, create_engine, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
 import time
 from sqlalchemy.exc import OperationalError
 import os
+from datetime import datetime
 
 # Fetch PORT from environment or default to 8000 for local testing
 PORT = int(os.getenv('PORT', 8000))
@@ -75,8 +76,8 @@ class Price(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     symbols = Column(String, nullable=False, index=True)  # Symbol of the financial instrument
-    value = Column(Float, nullable=False)  # Target price
-    timestamp = Column(String, nullable=False)  # When the price snapshot was recorded
+    value = Column(String, nullable=False)  # Target price
+    timestamp = Column(DateTime, nullable=False)  # When the price snapshot was recorded
 
 # Pydantic model for trade data
 class TradeData(BaseModel):
@@ -86,8 +87,8 @@ class TradeData(BaseModel):
 
 class PriceData(BaseModel):
     symbols: str
-    value: float
-    timestamp: str
+    value: str
+    timestamp: datetime
 
 # Endpoint to add a trade
 # @app.post("/trades")
