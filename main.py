@@ -11,7 +11,7 @@ DATABASE_URL = "postgresql+psycopg2://postgres:password@db:5432/gibbor_tradingdb
 
 # SQLAlchemy setup
 Base = declarative_base()
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL, pool_size=10, max_overflow=20)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Retry logic to wait for the database to be ready
@@ -52,16 +52,29 @@ class TradeRecord(Base):
     action = Column(String)  # "buy" or "sell"
     lot_size = Column(Float)
 
+class Price(Base):
+    __tablename__ = "prices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    symbols = Column(String, nullable=False, index=True)  # Symbol of the financial instrument
+    value = Column(Float, nullable=False)  # Target price
+    timestamp = Column(String, nullable=False)  # When the price snapshot was recorded
+
 # Pydantic model for trade data
 class TradeData(BaseModel):
-    symbol: str
+    symbols: str
     action: str  # "buy" or "sell"
     lot_size: float
+
+class PriceData(BaseModel):
+    symbols: str
+    value: float
+    timestamp: str
 
 # Endpoint to add a trade
 @app.post("/trades")
 async def add_trade(data: TradeData, db: Session = Depends(get_db)):
-    trade_record = TradeRecord(symbol=data.symbol, action=data.action, lot_size=data.lot_size)
+    trade_record = TradeRecord(symbol=data.symbols, action=data.action, lot_size=data.lot_size)
     db.add(trade_record)
     db.commit()
     db.refresh(trade_record)
@@ -72,6 +85,33 @@ async def add_trade(data: TradeData, db: Session = Depends(get_db)):
 async def get_trades(db: Session = Depends(get_db)):
     trades = db.query(TradeRecord).all()
     return {"trades": trades}
+
+@app.post("/prices")
+async def add_price(data: PriceData, db: Session = Depends(get_db)):
+    # Specify static values for each column
+    price_record = Price(
+        symbols="TEST_SYMBOL",          # Static string for the symbol
+        value=1234.56,                  # Static value for the price
+        timestamp="2024-01-01 00:00:00" # Static string for the timestamp
+    )
+    db.add(price_record)
+    db.commit()
+    db.refresh(price_record)
+    return {"status": "success", "price": price_record}
+
+# Endpoint to list all price records
+@app.get("/prices")
+async def get_prices(db: Session = Depends(get_db)):
+    prices = db.query(Price).all()
+    return {"prices": prices}
+
+# @app.post("/prices")
+# async def add_price(data: PriceData, db: Session = Depends(get_db)):
+#     price_record = Price(symbols=data.symbols, value=data.value, timestamp=data.timestamp)
+#     db.add(price_record)
+#     db.commit()
+#     db.refresh(price_record)
+#     return {"status": "success", "price": price_record}
 
 # Test endpoint
 @app.get("/")
