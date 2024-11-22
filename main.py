@@ -10,6 +10,12 @@ import os
 # Database URL (use environment variables in production)
 # DATABASE_URL = "postgresql+psycopg2://postgres:password@db:5432/gibbor_tradingdb"
 DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set. Please set it in your environment.")
+
 
 
 # SQLAlchemy setup
