@@ -126,3 +126,7 @@ async def get_prices(db: Session = Depends(get_db)):
 @app.get("/")
 async def root():
     return {"message": "FastAPI app with PostgreSQL is running"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
