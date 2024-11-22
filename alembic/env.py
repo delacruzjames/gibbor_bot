@@ -13,7 +13,7 @@ config = context.config
 fileConfig(config.config_file_name)
 
 # Dynamically fetch the database URL from the environment variable
-database_url = os.getenv("DATABASE_URL", "postgresql+psycopg2://postgres:password@localhost:5432/gibbor_tradingdb")
+database_url = os.getenv("DATABASE_URL")
 config.set_main_option("sqlalchemy.url", database_url)
 
 # Set the metadata for autogenerate
