@@ -90,18 +90,40 @@ class PriceData(BaseModel):
     timestamp: str
 
 # Endpoint to add a trade
-@app.post("/trades")
-async def add_trade(data: TradeData, db: Session = Depends(get_db)):
-    """
-    Endpoint to handle incoming price data.
-    """
-    # Debug log: Print received data
-    print("Received Data:", data)
-    trade_record = TradeRecord(symbol=data.symbols, action=data.action, lot_size=data.lot_size)
-    db.add(trade_record)
-    db.commit()
-    db.refresh(trade_record)
-    return {"status": "success", "trade": trade_record}
+# @app.post("/trades")
+# async def add_trade(data: TradeData, db: Session = Depends(get_db)):
+#     """
+#     Endpoint to handle incoming price data.
+#     """
+#     # Debug log: Print received data
+#     print("Received Data:", data)
+#     trade_record = TradeRecord(symbol=data.symbols, action=data.action, lot_size=data.lot_size)
+#     db.add(trade_record)
+#     db.commit()
+#     db.refresh(trade_record)
+#     return {"status": "success", "trade": trade_record}
+from fastapi import HTTPException
+
+@app.post("/prices")
+async def add_price(data: PriceData, db: Session = Depends(get_db)):
+    try:
+        # Log the incoming payload
+        print("Received payload:", data)
+
+        # Process the request
+        price_record = Price(
+            symbols=data.symbols,
+            value=data.value,
+            timestamp=data.timestamp
+        )
+        db.add(price_record)
+        db.commit()
+        db.refresh(price_record)
+        return {"status": "success", "price": price_record}
+    except Exception as e:
+        print("Validation or Processing Error:", str(e))
+        raise HTTPException(status_code=422, detail="Invalid request payload")
+
 
 # Endpoint to list all trades
 @app.get("/trades")
