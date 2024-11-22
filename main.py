@@ -7,6 +7,9 @@ import time
 from sqlalchemy.exc import OperationalError
 import os
 
+# Fetch PORT from environment or default to 8000 for local testing
+PORT = int(os.getenv('PORT', 8000))
+
 # Database URL (use environment variables in production)
 # DATABASE_URL = "postgresql+psycopg2://postgres:password@db:5432/gibbor_tradingdb"
 DATABASE_URL = os.getenv("DATABASE_URL")
