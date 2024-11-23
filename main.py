@@ -77,7 +77,7 @@ class Price(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     symbols = Column(String, nullable=False, index=True)  # Symbol of the financial instrument
     value = Column(String, nullable=False)  # Target price
-    timestamp = Column(DateTime, nullable=False)  # When the price snapshot was recorded
+    timestamp = Column(String, nullable=False)  # When the price snapshot was recorded
 
 # Pydantic model for trade data
 class TradeData(BaseModel):
@@ -88,7 +88,7 @@ class TradeData(BaseModel):
 class PriceData(BaseModel):
     symbols: str
     value: str
-    timestamp: datetime
+    timestamp: str
 
 # Endpoint to add a trade
 # @app.post("/trades")
