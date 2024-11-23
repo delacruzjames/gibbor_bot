@@ -124,10 +124,18 @@ class PriceData(BaseModel):
 #         print("Validation or Processing Error:", str(e))
 #         raise HTTPException(status_code=422, detail="Invalid request payload")
 @app.post("/prices")
-async def add_price(data: dict, db: Session = Depends(get_db)):
-    print("Raw Payload Received:", data)  # Logs raw payload for debugging
-    # Re-validate and process the data manually if needed
-    return {"status": "success", "received": data}
+async def add_price(request: Request, db: Session = Depends(get_db)):
+    try:
+        # Parse the raw JSON payload from the request body
+        data = await request.json()
+
+        print("Raw Payload Received:", data)  # Logs raw payload for debugging
+
+        # Perform any additional validation or processing if needed
+        return {"status": "success", "received": data}
+    except Exception as e:
+        print("Error processing request:", str(e))
+        return {"status": "error", "detail": "Invalid request payload"}
 
 # @app.post("/prices")
 # async def add_price(request: Request, db: Session = Depends(get_db)):
@@ -173,18 +181,18 @@ async def get_trades(db: Session = Depends(get_db)):
     trades = db.query(TradeRecord).all()
     return {"trades": trades}
 
-@app.post("/prices")
-async def add_price(data: PriceData, db: Session = Depends(get_db)):
-    # Specify static values for each column
-    price_record = Price(
-        symbols="TEST_SYMBOL",          # Static string for the symbol
-        value=1234.56,                  # Static value for the price
-        timestamp="2024-01-01 00:00:00" # Static string for the timestamp
-    )
-    db.add(price_record)
-    db.commit()
-    db.refresh(price_record)
-    return {"status": "success", "price": price_record}
+# @app.post("/prices")
+# async def add_price(data: PriceData, db: Session = Depends(get_db)):
+#     # Specify static values for each column
+#     price_record = Price(
+#         symbols="TEST_SYMBOL",          # Static string for the symbol
+#         value=1234.56,                  # Static value for the price
+#         timestamp="2024-01-01 00:00:00" # Static string for the timestamp
+#     )
+#     db.add(price_record)
+#     db.commit()
+#     db.refresh(price_record)
+#     return {"status": "success", "price": price_record}
 
 # Endpoint to list all price records
 @app.get("/prices")
