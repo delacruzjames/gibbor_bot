@@ -6,6 +6,7 @@ from pydantic import BaseModel
 import time
 from sqlalchemy.exc import OperationalError
 import os
+import json
 from datetime import datetime
 
 # Fetch PORT from environment or default to 8000 for local testing
@@ -127,21 +128,15 @@ class PriceData(BaseModel):
 @app.post("/prices")
 async def add_price(request: Request, db: Session = Depends(get_db)):
     try:
-        # Read raw body as string
+        # Read raw body
         raw_body = await request.body()
 
-        # Convert byte array to string
-        raw_data = raw_body.decode("utf-8").strip("\x00")  # Handle null terminator if present
+        # Decode bytes to string and load JSON
+        data = json.loads(raw_body.decode("utf-8").strip("\x00"))
 
-        print("Raw Data Received:", raw_data)  # Debugging raw data
+        print("Received JSON Data:", data)
 
-        # Parse the raw string as JSON
-        import json
-        data = json.loads(raw_data)
-
-        print("Parsed JSON Data:", data)  # Debug parsed data for debugging
-
-        # Extract and validate required fields
+        # Validate required fields
         symbols = data.get("symbols")
         value = data.get("value")
         timestamp = data.get("timestamp")
@@ -149,30 +144,18 @@ async def add_price(request: Request, db: Session = Depends(get_db)):
         if not symbols or not value or not timestamp:
             raise HTTPException(status_code=400, detail="Missing required fields: symbols, value, or timestamp")
 
-        # Create a new Price record
-        price_record = Price(
-            symbols=symbols,
-            value=value,
-            timestamp=timestamp
-        )
+        # Save to database
+        price_record = Price(symbols=symbols, value=value, timestamp=timestamp)
         db.add(price_record)
         db.commit()
         db.refresh(price_record)
 
-        # Return success response with the created record
-        return {
-            "status": "success",
-            "price": {
-                "id": price_record.id,
-                "symbols": symbols,
-                "value": value,
-                "timestamp": timestamp,
-            },
-        }
+        return {"status": "success", "price": {"id": price_record.id, "symbols": symbols, "value": value, "timestamp": timestamp}}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
     except Exception as e:
         print("Error processing request:", str(e))
         raise HTTPException(status_code=422, detail="Invalid request payload")
-
 
 # @app.post("/prices")
 # async def add_price(request: Request, db: Session = Depends(get_db)):
@@ -244,6 +227,17 @@ async def get_prices(db: Session = Depends(get_db)):
 #     db.commit()
 #     db.refresh(price_record)
 #     return {"status": "success", "price": price_record}
+
+@app.delete("/clear_prices")
+async def clear_prices(db: Session = Depends(get_db)):
+    try:
+        # Delete all records in the prices table
+        db.query(Price).delete()
+        db.commit()
+        return {"status": "success", "message": "All price records have been cleared."}
+    except Exception as e:
+        print("Error clearing price records:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to clear price records")
 
 # Test endpoint
 @app.get("/")
