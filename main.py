@@ -105,25 +105,6 @@ class PriceData(BaseModel):
 #     db.refresh(trade_record)
 #     return {"status": "success", "trade": trade_record}
 
-# @app.post("/prices")
-# async def add_price(data: PriceData, db: Session = Depends(get_db)):
-#     try:
-#         # Log the incoming payload
-#         print("Received payload:", data.dict())
-#
-#         # Process the request
-#         price_record = Price(
-#             symbols=data.symbols,
-#             value=data.value,
-#             timestamp=data.timestamp
-#         )
-#         db.add(price_record)
-#         db.commit()
-#         db.refresh(price_record)
-#         return {"status": "success", "price": price_record}
-#     except Exception as e:
-#         print("Validation or Processing Error:", str(e))
-#         raise HTTPException(status_code=422, detail="Invalid request payload")
 
 @app.post("/prices")
 async def add_price(request: Request, db: Session = Depends(get_db)):
@@ -157,43 +138,6 @@ async def add_price(request: Request, db: Session = Depends(get_db)):
         print("Error processing request:", str(e))
         raise HTTPException(status_code=422, detail="Invalid request payload")
 
-# @app.post("/prices")
-# async def add_price(request: Request, db: Session = Depends(get_db)):
-#     try:
-#         # Read the body as a raw string
-#         raw_body = await request.body()
-#         payload = raw_body.decode("utf-8")
-#
-#         # Log the received raw string payload
-#         print("Received raw payload:", payload)
-#
-#         # Parse the raw string (you can add custom parsing logic here if needed)
-#         if not payload.startswith("{") or not payload.endswith("}"):
-#             raise HTTPException(status_code=422, detail="Payload must be a valid string containing JSON-like data.")
-#
-#         # Process the string as a dictionary manually
-#         data = eval(payload)  # Use eval cautiously; this assumes trusted input
-#         symbols = data.get("symbols", "")
-#         value = data.get("value", "")
-#         timestamp = data.get("timestamp", "")
-#
-#         if not (symbols and value and timestamp):
-#             raise HTTPException(status_code=422, detail="Missing required fields in payload.")
-#
-#         # Create and save the record
-#         price_record = Price(
-#             symbols=symbols,
-#             value=value,
-#             timestamp=timestamp
-#         )
-#         db.add(price_record)
-#         db.commit()
-#         db.refresh(price_record)
-#
-#         return {"status": "success", "price": price_record}
-#     except Exception as e:
-#         print("Error processing raw payload:", str(e))
-#         raise HTTPException(status_code=422, detail="Invalid request payload")
 
 # Endpoint to list all trades
 @app.get("/trades")
@@ -220,13 +164,6 @@ async def get_prices(db: Session = Depends(get_db)):
     prices = db.query(Price).all()
     return {"prices": prices}
 
-# @app.post("/prices")
-# async def add_price(data: PriceData, db: Session = Depends(get_db)):
-#     price_record = Price(symbols=data.symbols, value=data.value, timestamp=data.timestamp)
-#     db.add(price_record)
-#     db.commit()
-#     db.refresh(price_record)
-#     return {"status": "success", "price": price_record}
 
 @app.delete("/clear_prices")
 async def clear_prices(db: Session = Depends(get_db)):
