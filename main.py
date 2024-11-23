@@ -109,7 +109,7 @@ from fastapi import HTTPException
 async def add_price(data: PriceData, db: Session = Depends(get_db)):
     try:
         # Log the incoming payload
-        print("Received payload:", data)
+        print("Received payload:", data.json())
 
         # Process the request
         price_record = Price(
