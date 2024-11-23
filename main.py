@@ -131,11 +131,30 @@ async def add_price(request: Request, db: Session = Depends(get_db)):
 
         print("Raw Payload Received:", data)  # Logs raw payload for debugging
 
-        # Perform any additional validation or processing if needed
-        return {"status": "success", "received": data}
+        # Validate and extract required fields
+        symbols = data.get("symbols")
+        value = data.get("value")
+        timestamp = data.get("timestamp")
+
+        # Basic validation for required fields
+        if not symbols or not value or not timestamp:
+            raise HTTPException(status_code=400, detail="Missing required fields: symbols, value, or timestamp")
+
+        # Create a new Price record
+        price_record = Price(
+            symbols=symbols,
+            value=value,
+            timestamp=timestamp
+        )
+        db.add(price_record)
+        db.commit()
+        db.refresh(price_record)
+
+        # Return success response with the created record
+        return {"status": "success", "price": {"id": price_record.id, "symbols": symbols, "value": value, "timestamp": timestamp}}
     except Exception as e:
         print("Error processing request:", str(e))
-        return {"status": "error", "detail": "Invalid request payload"}
+        raise HTTPException(status_code=422, detail="Invalid request payload")
 
 # @app.post("/prices")
 # async def add_price(request: Request, db: Session = Depends(get_db)):
