@@ -123,20 +123,29 @@ class PriceData(BaseModel):
 #     except Exception as e:
 #         print("Validation or Processing Error:", str(e))
 #         raise HTTPException(status_code=422, detail="Invalid request payload")
+
 @app.post("/prices")
 async def add_price(request: Request, db: Session = Depends(get_db)):
     try:
-        # Parse the raw JSON payload from the request body
-        data = await request.json()
+        # Read raw body as string
+        raw_body = await request.body()
 
-        print("Raw Payload Received:", data)  # Logs raw payload for debugging
+        # Convert byte array to string
+        raw_data = raw_body.decode("utf-8").strip("\x00")  # Handle null terminator if present
 
-        # Validate and extract required fields
+        print("Raw Data Received:", raw_data)  # Debugging raw data
+
+        # Parse the raw string as JSON
+        import json
+        data = json.loads(raw_data)
+
+        print("Parsed JSON Data:", data)  # Debug parsed data for debugging
+
+        # Extract and validate required fields
         symbols = data.get("symbols")
         value = data.get("value")
         timestamp = data.get("timestamp")
 
-        # Basic validation for required fields
         if not symbols or not value or not timestamp:
             raise HTTPException(status_code=400, detail="Missing required fields: symbols, value, or timestamp")
 
@@ -151,10 +160,19 @@ async def add_price(request: Request, db: Session = Depends(get_db)):
         db.refresh(price_record)
 
         # Return success response with the created record
-        return {"status": "success", "price": {"id": price_record.id, "symbols": symbols, "value": value, "timestamp": timestamp}}
+        return {
+            "status": "success",
+            "price": {
+                "id": price_record.id,
+                "symbols": symbols,
+                "value": value,
+                "timestamp": timestamp,
+            },
+        }
     except Exception as e:
         print("Error processing request:", str(e))
         raise HTTPException(status_code=422, detail="Invalid request payload")
+
 
 # @app.post("/prices")
 # async def add_price(request: Request, db: Session = Depends(get_db)):
