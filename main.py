@@ -106,15 +106,15 @@ class PriceData(BaseModel):
 #     return {"status": "success", "trade": trade_record}
 
 
+# API endpoint to add a price record
 @app.post("/prices")
 async def add_price(request: Request, db: Session = Depends(get_db)):
     try:
         # Read raw body
         raw_body = await request.body()
 
-        # Decode bytes to string and load JSON
+        # Decode bytes to string and parse JSON
         data = json.loads(raw_body.decode("utf-8").strip("\x00"))
-
         print("Received JSON Data:", data)
 
         # Validate required fields
@@ -131,7 +131,16 @@ async def add_price(request: Request, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(price_record)
 
-        return {"status": "success", "price": {"id": price_record.id, "symbols": symbols, "value": value, "timestamp": timestamp}}
+        # Return success response
+        return {
+            "status": "success",
+            "price": {
+                "id": price_record.id,
+                "symbols": symbols,
+                "value": value,
+                "timestamp": timestamp
+            }
+        }
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON format")
     except Exception as e:
