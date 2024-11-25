@@ -9,3 +9,4 @@ databases
 asyncpg
 python-dotenv
 h11
+openai==1.55.0

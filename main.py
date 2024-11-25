@@ -7,7 +7,9 @@ import time
 from sqlalchemy.exc import OperationalError
 import os
 import json
-from datetime import datetime
+import openai
+
+openai.api_key = os.getenv("OPENAPI_KEY")
 
 # Fetch PORT from environment or default to 8000 for local testing
 PORT = int(os.getenv('PORT', 8000))
