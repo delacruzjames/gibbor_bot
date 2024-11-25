@@ -7,9 +7,6 @@ import time
 from sqlalchemy.exc import OperationalError
 import os
 import json
-import openai
-
-openai.api_key = os.getenv("OPENAPI_KEY")
 
 # Fetch PORT from environment or default to 8000 for local testing
 PORT = int(os.getenv('PORT', 8000))
@@ -92,6 +89,41 @@ class PriceData(BaseModel):
     symbols: str
     value: str
     timestamp: str
+
+from openai import OpenAI
+client = OpenAI(api_key="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")
+
+@app.post("/chat")
+async def chat_with_gpt(request: Request):
+    """
+    Chat with OpenAI GPT model.
+    """
+    try:
+        # Parse the request body
+        body = await request.json()
+        user_message = body.get("message")
+
+        if not user_message:
+            raise HTTPException(status_code=400, detail="Missing 'message' in request body")
+
+        # Generate a response using OpenAI client
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",  # Replace with the correct model
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": user_message}
+            ]
+        )
+
+        # Extract the AI's response
+        ai_message = completion.choices[0].message
+        print(ai_message)
+        return {"status": "success", "response": ai_message}
+
+    except Exception as e:
+        # Handle unexpected errors
+        print(f"Error processing request: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
 # Endpoint to add a trade
 @app.post("/trades")
