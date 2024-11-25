@@ -7,6 +7,8 @@ import time
 from sqlalchemy.exc import OperationalError
 import os
 import json
+from datetime import datetime
+from collections import defaultdict
 
 # Fetch PORT from environment or default to 8000 for local testing
 PORT = int(os.getenv('PORT', 8000))
@@ -93,6 +95,34 @@ class PriceData(BaseModel):
 from openai import OpenAI
 client = OpenAI(api_key="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")
 
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Query and group by symbol and date
+def get_prices_grouped_by_symbol_and_date():
+    session = SessionLocal()
+    try:
+        prices = session.query(Price).all()
+        grouped_data = defaultdict(lambda: defaultdict(list))
+
+        for price in prices:
+            date = datetime.fromisoformat(price.timestamp.replace("Z", "")).date()
+            grouped_data[price.symbols][date].append(float(price.value))
+
+        # Format grouped data into the desired output
+        formatted_result = []
+        for symbol, dates in grouped_data.items():
+            for date, values in dates.items():
+                formatted_result.append(f"{symbol}: {date} Values {values}")
+
+        return formatted_result
+    finally:
+        session.close()
+
+
 @app.post("/chat")
 async def chat_with_gpt(request: Request):
     """
@@ -101,24 +131,34 @@ async def chat_with_gpt(request: Request):
     try:
         # Parse the request body
         body = await request.json()
-        user_message = body.get("message")
 
-        if not user_message:
-            raise HTTPException(status_code=400, detail="Missing 'message' in request body")
+        # Call the function to get grouped prices
+        grouped_prices = get_prices_grouped_by_symbol_and_date()
+        logger.info(f"Grouped Prices: {grouped_prices}")
 
-        # Generate a response using OpenAI client
-        completion = client.chat.completions.create(
-            model="gpt-4",  # Replace with the correct model
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": user_message}
-            ]
-        )
+        # Check if grouped_prices is empty or None
+        # if not grouped_prices:
+        #     raise HTTPException(status_code=500, detail="No data returned from get_prices_grouped_by_symbol_and_date")
 
-        # Extract the AI's response
-        ai_message = completion.choices[0].message
-        print(ai_message)
-        return {"status": "success", "response": ai_message}
+        # Format the grouped prices into the desired format
+        # formatted_grouped_prices = "\n".join(grouped_prices)  # Join all entries with newlines
+        #
+        # # Generate a response using OpenAI client
+        # completion = client.chat.completions.create(
+        #     model="gpt-4-turbo",  # Replace with the correct model
+        #     messages=[
+        #         {"role": "system", "content": "You are a helpful assistant."},
+        #         {"role": "user", "content": formatted_grouped_prices}
+        #     ]
+        # )
+        #
+        # # Extract the AI's response
+        # ai_message = completion.choices[0].message
+        #
+        # # Log the AI's response
+        # logger.info(f"AI Response: {ai_message}")
+
+        return {"status": "success", "grouped_prices": grouped_prices}
 
     except Exception as e:
         # Handle unexpected errors
