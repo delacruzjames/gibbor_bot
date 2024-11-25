@@ -149,7 +149,7 @@ async def chat_with_gpt(request: Request):
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": formatted_grouped_prices},
-                {"role": "user", "content": "Based on the EUR/USD price data, can you recommend a trade execution or a pending order"},
+                {"role": "user", "content": "Based on the EUR/USD price data, can you recommend a pending order summary"},
             ]
         )
 
