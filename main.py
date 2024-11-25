@@ -151,7 +151,7 @@ async def chat_with_gpt(request: Request):
                 {"role": "user", "content": formatted_grouped_prices},
                 {"role": "user", "content": "Based on the EUR/USD price data, can you recommend a pending order summary"},
                 {"role": "user",
-                 "content": "Based on the EUR/USD price data, can you recommend a pending order summary"},
+                 "content": 'Print something like this {"action": "buy-limit", "entry": "00.00", "sl":"00.00", "tp":"00.00"}'},
             ]
         )
 
