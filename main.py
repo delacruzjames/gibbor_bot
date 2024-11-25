@@ -108,7 +108,7 @@ async def chat_with_gpt(request: Request):
 
         # Generate a response using OpenAI client
         completion = client.chat.completions.create(
-            model="gpt-4o-mini",  # Replace with the correct model
+            model="gpt-4",  # Replace with the correct model
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": user_message}
