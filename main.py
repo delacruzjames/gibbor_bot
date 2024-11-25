@@ -137,28 +137,29 @@ async def chat_with_gpt(request: Request):
         logger.info(f"Grouped Prices: {grouped_prices}")
 
         # Check if grouped_prices is empty or None
-        # if not grouped_prices:
-        #     raise HTTPException(status_code=500, detail="No data returned from get_prices_grouped_by_symbol_and_date")
+        if not grouped_prices:
+            raise HTTPException(status_code=500, detail="No data returned from get_prices_grouped_by_symbol_and_date")
 
         # Format the grouped prices into the desired format
-        # formatted_grouped_prices = "\n".join(grouped_prices)  # Join all entries with newlines
-        #
-        # # Generate a response using OpenAI client
-        # completion = client.chat.completions.create(
-        #     model="gpt-4-turbo",  # Replace with the correct model
-        #     messages=[
-        #         {"role": "system", "content": "You are a helpful assistant."},
-        #         {"role": "user", "content": formatted_grouped_prices}
-        #     ]
-        # )
-        #
-        # # Extract the AI's response
-        # ai_message = completion.choices[0].message
-        #
-        # # Log the AI's response
-        # logger.info(f"AI Response: {ai_message}")
+        formatted_grouped_prices = "\n".join(grouped_prices)  # Join all entries with newlines
 
-        return {"status": "success", "grouped_prices": grouped_prices}
+        # Generate a response using OpenAI client
+        completion = client.chat.completions.create(
+            model="gpt-4-turbo",  # Replace with the correct model
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": formatted_grouped_prices},
+                {"role": "user", "content": "Analyze trade for me BUY OR SELL Based on News and Information regarding EURUSD"},
+            ]
+        )
+
+        # Extract the AI's response
+        ai_message = completion.choices[0].message
+
+        # Log the AI's response
+        logger.info(f"AI Response: {ai_message}")
+
+        return {"status": "success", "grouped_prices": ai_message}
 
     except Exception as e:
         # Handle unexpected errors
