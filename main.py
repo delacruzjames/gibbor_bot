@@ -151,6 +151,8 @@ async def chat_with_gpt(request: Request):
                 {"role": "user", "content": formatted_grouped_prices},
                 {"role": "user", "content": "Based on the EUR/USD price data, can you recommend a pending order summary"},
                 {"role": "user",
+                 "content": "Please also consider News, Technical Analysis and Indicators"},
+                {"role": "user",
                  "content": 'Print something like this {"action": "buy-limit", "entry": "00.00", "sl":"00.00", "tp":"00.00"}'},
             ]
         )
@@ -158,10 +160,7 @@ async def chat_with_gpt(request: Request):
         # Extract the AI's response
         ai_message = completion.choices[0].message
 
-        # Log the AI's response
-        logger.info(f"AI Response: {ai_message}")
-
-        return {"status": "success", "grouped_prices": ai_message}
+        return {"status": "success", "data": ai_message}
 
     except Exception as e:
         # Handle unexpected errors
