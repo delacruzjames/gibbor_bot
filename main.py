@@ -153,8 +153,16 @@ async def chat_with_gpt(request: Request):
             ]
         )
 
+        completion2 = client.chat.completions.create(
+            model="gpt-4-turbo",  # Replace with the correct model
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": completion + " - analyze information and give me summary"},
+            ]
+        )
+
         # Extract the AI's response
-        ai_message = completion.choices[0].message
+        ai_message = completion2.choices[0].message
 
         # Log the AI's response
         logger.info(f"AI Response: {ai_message}")
