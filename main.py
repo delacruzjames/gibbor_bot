@@ -93,7 +93,8 @@ class PriceData(BaseModel):
     timestamp: str
 
 from openai import OpenAI
-client = OpenAI(api_key="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")
+OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 import logging
 
@@ -230,18 +231,6 @@ async def get_trades(db: Session = Depends(get_db)):
     trades = db.query(TradeRecord).all()
     return {"trades": trades}
 
-# @app.post("/prices")
-# async def add_price(data: PriceData, db: Session = Depends(get_db)):
-#     # Specify static values for each column
-#     price_record = Price(
-#         symbols="TEST_SYMBOL",          # Static string for the symbol
-#         value=1234.56,                  # Static value for the price
-#         timestamp="2024-01-01 00:00:00" # Static string for the timestamp
-#     )
-#     db.add(price_record)
-#     db.commit()
-#     db.refresh(price_record)
-#     return {"status": "success", "price": price_record}
 
 # Endpoint to list all price records
 @app.get("/prices")
