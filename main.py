@@ -169,12 +169,32 @@ def load_model():
 def generate_trading_signal(current_price, predicted_price, indicators):
     action = 'hold'
 
-    # Simple trading logic based on RSI and price prediction
-    if predicted_price > current_price and indicators['rsi'] < 30:
-        action = 'buy-limit'
-    elif predicted_price < current_price and indicators['rsi'] > 70:
-        action = 'sell-limit'
+    rsi = indicators['rsi']
+    price_difference = predicted_price - current_price
+    price_difference_percentage = (price_difference / current_price) * 100
 
+    logger.info(f"Current Price: {current_price}")
+    logger.info(f"Predicted Price: {predicted_price}")
+    logger.info(f"Price Difference (%): {price_difference_percentage:.2f}%")
+    logger.info(f"RSI: {rsi}")
+
+    # Thresholds
+    significant_move = 0.2  # Adjust this threshold as needed
+    overbought = 70
+    oversold = 30
+
+    if predicted_price > current_price:
+        if price_difference_percentage >= significant_move and rsi > overbought:
+            action = 'buy-stop'
+        elif rsi < oversold:
+            action = 'buy-limit'
+    elif predicted_price < current_price:
+        if abs(price_difference_percentage) >= significant_move and rsi < oversold:
+            action = 'sell-stop'
+        elif rsi > overbought:
+            action = 'sell-limit'
+
+    logger.info(f"Generated Action: {action}")
     return action
 
 # Endpoint to add a price record
@@ -301,13 +321,13 @@ async def chat_with_model(request: Request):
         indicators = latest_data.to_dict()
         action = generate_trading_signal(current_price, predicted_price, indicators)
 
-        # Prepare Stop Loss and Take Profit (example calculations)
+        # Prepare Stop Loss and Take Profit
         sl = None
         tp = None
-        if action == 'buy-limit':
+        if action in ['buy-limit', 'buy-stop']:
             sl = predicted_price * 0.995  # Stop Loss at 0.5% below entry
             tp = predicted_price * 1.005  # Take Profit at 0.5% above entry
-        elif action == 'sell-limit':
+        elif action in ['sell-limit', 'sell-stop']:
             sl = predicted_price * 1.005  # Stop Loss at 0.5% above entry
             tp = predicted_price * 0.995  # Take Profit at 0.5% below entry
 
@@ -323,6 +343,7 @@ async def chat_with_model(request: Request):
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+
 
 # Health check endpoint
 @app.get("/health")
