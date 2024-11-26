@@ -10,3 +10,7 @@ asyncpg
 python-dotenv
 h11
 openai
+pandas
+ta
+scikit-learn
+joblib

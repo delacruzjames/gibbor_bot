@@ -1,28 +1,40 @@
+import os
+import json
+import time
+import logging
+from datetime import datetime
+from collections import defaultdict
+
 from fastapi import FastAPI, Depends, Request, HTTPException
-from sqlalchemy import Column, Integer, String, Float, create_engine, DateTime
+from sqlalchemy import Column, Integer, String, Float, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
-import time
 from sqlalchemy.exc import OperationalError
-import os
-import json
-from datetime import datetime
-from collections import defaultdict
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import GradientBoostingRegressor
+import joblib  # For saving and loading the model
+
+# Technical analysis library
+import ta  # Install with `pip install ta`
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Fetch PORT from environment or default to 8000 for local testing
 PORT = int(os.getenv('PORT', 8000))
 
 # Database URL (use environment variables in production)
-# DATABASE_URL = "postgresql+psycopg2://postgres:password@db:5432/gibbor_tradingdb"
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set. Please set it in your environment.")
-
-
 
 # SQLAlchemy setup
 Base = declarative_base()
@@ -37,14 +49,14 @@ for attempt in range(MAX_RETRIES):
     try:
         # Attempt to connect to the database and create tables
         Base.metadata.create_all(bind=engine)
-        print("Database connected and tables created successfully.")
+        logger.info("Database connected and tables created successfully.")
         break
     except OperationalError:
         if attempt < MAX_RETRIES - 1:
-            print(f"Database connection failed. Retrying in {RETRY_INTERVAL} seconds...")
+            logger.warning(f"Database connection failed. Retrying in {RETRY_INTERVAL} seconds...")
             time.sleep(RETRY_INTERVAL)
         else:
-            print("Max retries reached. Exiting.")
+            logger.error("Max retries reached. Exiting.")
             raise
 
 # Dependency to get database session
@@ -58,13 +70,7 @@ def get_db():
 # FastAPI app
 app = FastAPI()
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))  # Default to 8000 if PORT is not set
-    uvicorn.run(app, host="0.0.0.0", port=port)
-
-
-# Database model
+# Database models
 class TradeRecord(Base):
     __tablename__ = "trades"
 
@@ -81,7 +87,7 @@ class Price(Base):
     value = Column(String, nullable=False)  # Target price
     timestamp = Column(String, nullable=False)  # When the price snapshot was recorded
 
-# Pydantic model for trade data
+# Pydantic models for request validation
 class TradeData(BaseModel):
     symbols: str
     action: str  # "buy" or "sell"
@@ -92,98 +98,86 @@ class PriceData(BaseModel):
     value: str
     timestamp: str
 
-from openai import OpenAI
-OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Query and group by symbol and date
-def get_prices_grouped_by_symbol_and_date():
+# Utility function to get prices from the database and return as a DataFrame
+def get_price_data(symbol: str):
     session = SessionLocal()
     try:
-        prices = session.query(Price).all()
-        grouped_data = defaultdict(lambda: defaultdict(list))
-
-        for price in prices:
-            date = datetime.fromisoformat(price.timestamp.replace("Z", "")).date()
-            grouped_data[price.symbols][date].append(float(price.value))
-
-        # Format grouped data into the desired output
-        formatted_result = []
-        for symbol, dates in grouped_data.items():
-            for date, values in dates.items():
-                formatted_result.append(f"{symbol}: {date} Values {values}")
-
-        return formatted_result
+        prices = session.query(Price).filter(Price.symbols == symbol).order_by(Price.timestamp).all()
+        data = pd.DataFrame([{
+            'timestamp': datetime.fromisoformat(price.timestamp.replace("Z", "")),
+            'value': float(price.value)
+        } for price in prices])
+        return data
     finally:
         session.close()
 
+# Function to calculate technical indicators
+def calculate_technical_indicators(data):
+    data.set_index('timestamp', inplace=True)
 
-@app.post("/chat")
-async def chat_with_gpt(request: Request):
-    """
-    Chat with OpenAI GPT model.
-    """
-    try:
-        # Parse the request body
-        body = await request.json()
+    # Calculate RSI
+    data['rsi'] = ta.momentum.RSIIndicator(close=data['value'], window=14).rsi()
 
-        # Call the function to get grouped prices
-        grouped_prices = get_prices_grouped_by_symbol_and_date()
-        logger.info(f"Grouped Prices: {grouped_prices}")
+    # Calculate Moving Averages
+    data['ma_50'] = data['value'].rolling(window=50).mean()
+    data['ma_200'] = data['value'].rolling(window=200).mean()
 
-        # Check if grouped_prices is empty or None
-        if not grouped_prices:
-            raise HTTPException(status_code=500, detail="No data returned from get_prices_grouped_by_symbol_and_date")
+    # Calculate Bollinger Bands (as an example of support and resistance)
+    bollinger = ta.volatility.BollingerBands(close=data['value'], window=20, window_dev=2)
+    data['bb_middle'] = bollinger.bollinger_mavg()
+    data['bb_upper'] = bollinger.bollinger_hband()
+    data['bb_lower'] = bollinger.bollinger_lband()
 
-        # Format the grouped prices into the desired format
-        formatted_grouped_prices = "\n".join(grouped_prices)  # Join all entries with newlines
+    data.reset_index(inplace=True)
+    return data
 
-        # Generate a response using OpenAI client
-        completion = client.chat.completions.create(
-            model="gpt-4-turbo",  # Replace with the correct model
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": formatted_grouped_prices},
-                {"role": "user", "content": "Based on the EUR/USD price data, can you recommend a pending order summary"},
-                {"role": "user",
-                 "content": "Please also consider News, Technical Analysis and Indicators"},
-                {"role": "user",
-                 "content": 'Print something like this {"action": "buy-limit", "entry": "00.00", "sl":"00.00", "tp":"00.00"}'},
-            ]
-        )
+# Function to train the machine learning model
+def train_model(data):
+    # Prepare features and target
+    data.dropna(inplace=True)  # Drop rows with NaN values resulting from indicator calculations
 
-        # Extract the AI's response
-        ai_message = completion.choices[0].message
+    # Shift the target variable to predict the next price
+    data['target'] = data['value'].shift(-1)
+    data.dropna(inplace=True)
 
-        return {"status": "success", "data": ai_message}
+    features = ['value', 'rsi', 'ma_50', 'ma_200', 'bb_middle', 'bb_upper', 'bb_lower']
+    X = data[features]
+    y = data['target']
 
-    except Exception as e:
-        # Handle unexpected errors
-        print(f"Error processing request: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-# Endpoint to add a trade
-@app.post("/trades")
-async def add_trade(data: TradeData, db: Session = Depends(get_db)):
-    """
-    Endpoint to handle incoming price data.
-    """
-    # Debug log: Print received data
-    print("Received Data:", data)
-    trade_record = TradeRecord(symbol=data.symbols, action=data.action, lot_size=data.lot_size)
-    db.add(trade_record)
-    db.commit()
-    db.refresh(trade_record)
-    return {"status": "success", "trade": trade_record}
+    # Train model
+    model = GradientBoostingRegressor()
+    model.fit(X_train, y_train)
 
+    # Save the model
+    joblib.dump(model, 'price_prediction_model.pkl')
 
-# API endpoint to add a price record
+    logger.info("Model trained and saved successfully.")
+    return model
+
+# Function to load the trained model
+def load_model():
+    if not os.path.exists('price_prediction_model.pkl'):
+        logger.error("Model file not found. Please train the model first.")
+        raise FileNotFoundError("Model file not found.")
+    model = joblib.load('price_prediction_model.pkl')
+    return model
+
+# Function to generate trading signal based on predictions and indicators
+def generate_trading_signal(current_price, predicted_price, indicators):
+    action = 'hold'
+
+    # Simple trading logic based on RSI and price prediction
+    if predicted_price > current_price and indicators['rsi'] < 30:
+        action = 'buy-limit'
+    elif predicted_price < current_price and indicators['rsi'] > 70:
+        action = 'sell-limit'
+
+    return action
+
+# Endpoint to add a price record
 @app.post("/prices")
 async def add_price(request: Request, db: Session = Depends(get_db)):
     try:
@@ -192,7 +186,7 @@ async def add_price(request: Request, db: Session = Depends(get_db)):
 
         # Decode bytes to string and parse JSON
         data = json.loads(raw_body.decode("utf-8").strip("\x00"))
-        print("Received JSON Data:", data)
+        logger.info(f"Received JSON Data: {data}")
 
         # Validate required fields
         symbols = data.get("symbols")
@@ -221,40 +215,126 @@ async def add_price(request: Request, db: Session = Depends(get_db)):
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON format")
     except Exception as e:
-        print("Error processing request:", str(e))
+        logger.error(f"Error processing request: {str(e)}")
         raise HTTPException(status_code=422, detail="Invalid request payload")
 
-
-# Endpoint to list all trades
-@app.get("/trades")
-async def get_trades(db: Session = Depends(get_db)):
-    trades = db.query(TradeRecord).all()
-    return {"trades": trades}
-
+# Endpoint to add a trade
+@app.post("/trades")
+async def add_trade(data: TradeData, db: Session = Depends(get_db)):
+    logger.info(f"Received Trade Data: {data}")
+    trade_record = TradeRecord(symbol=data.symbols, action=data.action, lot_size=data.lot_size)
+    db.add(trade_record)
+    db.commit()
+    db.refresh(trade_record)
+    return {"status": "success", "trade": {
+        "id": trade_record.id,
+        "symbol": trade_record.symbol,
+        "action": trade_record.action,
+        "lot_size": trade_record.lot_size
+    }}
 
 # Endpoint to list all price records
 @app.get("/prices")
 async def get_prices(db: Session = Depends(get_db)):
     prices = db.query(Price).all()
-    return {"prices": prices}
+    price_list = [{
+        "id": price.id,
+        "symbols": price.symbols,
+        "value": price.value,
+        "timestamp": price.timestamp
+    } for price in prices]
+    return {"prices": price_list}
 
+# Endpoint to list all trades
+@app.get("/trades")
+async def get_trades(db: Session = Depends(get_db)):
+    trades = db.query(TradeRecord).all()
+    trade_list = [{
+        "id": trade.id,
+        "symbol": trade.symbol,
+        "action": trade.action,
+        "lot_size": trade.lot_size
+    } for trade in trades]
+    return {"trades": trade_list}
 
+# Endpoint to clear all price records
 @app.delete("/clear_prices")
 async def clear_prices(db: Session = Depends(get_db)):
     try:
         # Delete all records in the prices table
         db.query(Price).delete()
         db.commit()
+        logger.info("All price records have been cleared.")
         return {"status": "success", "message": "All price records have been cleared."}
     except Exception as e:
-        print("Error clearing price records:", str(e))
+        logger.error(f"Error clearing price records: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to clear price records")
 
-# Test endpoint
+# Endpoint to interact with the model and get trading recommendations
+@app.post("/chat")
+async def chat_with_model(request: Request):
+    try:
+        # Parse the request body
+        body = await request.json()
+        symbol = body.get('symbol', 'EURUSD')  # Default to 'EURUSD' if not provided
+
+        # Fetch and preprocess data
+        data = get_price_data(symbol)
+        data = calculate_technical_indicators(data)
+
+        # Load or train the model
+        if not os.path.exists('price_prediction_model.pkl'):
+            model = train_model(data)
+        else:
+            model = load_model()
+
+        # Prepare the latest data point for prediction
+        latest_data = data.iloc[-1]
+        features = ['value', 'rsi', 'ma_50', 'ma_200', 'bb_middle', 'bb_upper', 'bb_lower']
+        input_data = latest_data[features].values.reshape(1, -1)
+
+        # Make prediction
+        predicted_price = model.predict(input_data)[0]
+        current_price = latest_data['value']
+
+        # Generate trading signal
+        indicators = latest_data.to_dict()
+        action = generate_trading_signal(current_price, predicted_price, indicators)
+
+        # Prepare Stop Loss and Take Profit (example calculations)
+        sl = None
+        tp = None
+        if action == 'buy-limit':
+            sl = predicted_price * 0.995  # Stop Loss at 0.5% below entry
+            tp = predicted_price * 1.005  # Take Profit at 0.5% above entry
+        elif action == 'sell-limit':
+            sl = predicted_price * 1.005  # Stop Loss at 0.5% above entry
+            tp = predicted_price * 0.995  # Take Profit at 0.5% below entry
+
+        response = {
+            "action": action,
+            "entry": f"{predicted_price:.5f}" if action != 'hold' else None,
+            "sl": f"{sl:.5f}" if sl else None,
+            "tp": f"{tp:.5f}" if tp else None
+        }
+
+        return {"status": "success", "data": response}
+
+    except Exception as e:
+        logger.error(f"Error processing request: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+
+# Health check endpoint
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+
+# Root endpoint
 @app.get("/")
 async def root():
     return {"message": "FastAPI app with PostgreSQL is running"}
 
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
+# Run the app with Uvicorn when executed directly
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
