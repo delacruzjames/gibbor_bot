@@ -297,29 +297,39 @@ async def chat_with_model(request: Request):
         # Parse the request body
         body = await request.json()
         symbol = body.get('symbol', 'EURUSD')  # Default to 'EURUSD' if not provided
+        print(f"Received symbol: {symbol}")
 
         # Fetch and preprocess data
         data = get_price_data(symbol)
+        print("Data fetched successfully.")
         data = calculate_technical_indicators(data)
+        print("Technical indicators calculated.")
 
         # Load or train the model
         if not os.path.exists('price_prediction_model.pkl'):
+            print("Model file not found. Training model...")
             model = train_model(data)
+            print("Model trained successfully.")
         else:
+            print("Loading existing model...")
             model = load_model()
+            print("Model loaded successfully.")
 
         # Prepare the latest data point for prediction
         latest_data = data.iloc[-1]
         features = ['value', 'rsi', 'ma_50', 'ma_200', 'bb_middle', 'bb_upper', 'bb_lower']
         input_data = latest_data[features].values.reshape(1, -1)
+        print(f"Input data for prediction: {input_data}")
 
         # Make prediction
         predicted_price = model.predict(input_data)[0]
         current_price = latest_data['value']
+        print(f"Predicted price: {predicted_price}, Current price: {current_price}")
 
         # Generate trading signal
         indicators = latest_data.to_dict()
         action = generate_trading_signal(current_price, predicted_price, indicators)
+        print(f"Generated action: {action}")
 
         # Prepare Stop Loss and Take Profit
         sl = None
@@ -338,11 +348,15 @@ async def chat_with_model(request: Request):
             "tp": f"{tp:.5f}" if tp else None
         }
 
+        print("Response prepared:", response)
         return {"status": "success", "data": response}
 
     except Exception as e:
-        logger.error(f"Error processing request: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+        import traceback
+        error_message = f"Error processing request: {str(e)}\n{traceback.format_exc()}"
+        print(error_message)
+        raise HTTPException(status_code=500, detail=error_message)
+
 
 
 # Health check endpoint
