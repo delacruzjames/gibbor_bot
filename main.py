@@ -3,6 +3,7 @@ import json
 import time
 import logging
 from datetime import datetime
+from dateutil.parser import isoparse
 from collections import defaultdict
 
 from fastapi import FastAPI, Depends, Request, HTTPException
@@ -97,6 +98,17 @@ class PriceData(BaseModel):
     symbols: str
     value: str
     timestamp: str
+
+def parse_timestamp(timestamp_str):
+    try:
+        # Try ISO 8601 format
+        return isoparse(timestamp_str.replace("Z", ""))
+    except ValueError:
+        try:
+            # Try custom format
+            return datetime.strptime(timestamp_str, "%Y.%m.%d %H:%M:%S")
+        except ValueError:
+            raise ValueError(f"Invalid timestamp format: {timestamp_str}")
 
 # Utility function to get prices from the database and return as a DataFrame
 def get_price_data(symbol: str):
