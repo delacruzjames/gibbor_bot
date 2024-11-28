@@ -116,7 +116,7 @@ def get_price_data(symbol: str):
     try:
         prices = session.query(Price).filter(Price.symbols == symbol).order_by(Price.timestamp).all()
         data = pd.DataFrame([{
-            'symbol': price.symbol,
+            'symbol': price.symbols,
             'value': price.value,
             'timestamp': isoparse(price.timestamp)
         } for price in prices])
