@@ -14,3 +14,4 @@ pandas
 ta
 scikit-learn
 joblib
+python-dateutil
