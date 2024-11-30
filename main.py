@@ -431,7 +431,7 @@ async def chat_with_model(chat_request: ChatRequest):
         raise http_exc  # Re-raise HTTP exceptions to be handled by FastAPI
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
 
 # Health check endpoint
