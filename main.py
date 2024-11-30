@@ -276,7 +276,7 @@ async def add_price(price: PriceCreate, db: Session = Depends(get_db)):
         }
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
-        raise HTTPException(status_code=422, detail="Invalid request payload")
+        raise HTTPException(status_code=422, detail=f"Error processing request: {str(e)}")
 
 
 # Endpoint to add a trade
