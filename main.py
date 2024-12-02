@@ -4,12 +4,14 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from sqlalchemy import Column, Integer, String, Float, create_engine, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.exc import OperationalError
+from fastapi.responses import JSONResponse
+from logger import logger
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -18,10 +20,6 @@ import joblib  # For saving and loading the model
 
 # Technical analysis library
 import ta  # Install with `pip install ta`
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
 # Fetch PORT from environment or default to 8000 for local testing
 PORT = int(os.getenv('PORT', 8000))
@@ -248,6 +246,15 @@ def generate_trading_signal(current_price: float, predicted_price: float, indica
     return action
 
 
+@app.middleware("http")
+async def log_exceptions_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as e:
+        logger.error(f"Unhandled exception: {e}", exc_info=True)
+        return JSONResponse(content={"error": "Internal Server Error"}, status_code=500)
+
+
 # Endpoint to add a price record
 @app.post("/prices", response_model=dict)
 async def add_price(price: PriceCreate, db: Session = Depends(get_db)):
@@ -274,8 +281,12 @@ async def add_price(price: PriceCreate, db: Session = Depends(get_db)):
                 "timestamp": price_record.timestamp.isoformat()
             }
         }
+    except ValidationError as e:
+        print("Validation error:", e.json())
+        return {"status": "error", "message": e.errors()}
+
     except Exception as e:
-        logger.error(f"Error processing request: {str(e)}")
+        logger.info(f"Error processing request: {str(e)}")
         raise HTTPException(status_code=422, detail=f"Error processing request: {str(e)}")
 
 
