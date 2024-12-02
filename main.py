@@ -5,15 +5,16 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Request
-from sqlalchemy import Column, Integer, String, Float, create_engine, DateTime
+from sqlalchemy import Column, Integer, String, Float, create_engine, DateTime, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import OperationalError
 from fastapi.responses import JSONResponse
 from logger import logger
 
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import GradientBoostingRegressor
 import joblib  # For saving and loading the model
@@ -27,7 +28,7 @@ PORT = int(os.getenv('PORT', 8000))
 # Database URL (use environment variables in production)
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgresql+psycopg2://", "postgresql+psycopg2://", 1)
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set. Please set it in your environment.")
@@ -50,7 +51,8 @@ for attempt in range(MAX_RETRIES):
     except OperationalError as oe:
         if attempt < MAX_RETRIES - 1:
             logger.warning(
-                f"Database connection failed on attempt {attempt + 1}. Retrying in {RETRY_INTERVAL} seconds...")
+                f"Database connection failed on attempt {attempt + 1}. Retrying in {RETRY_INTERVAL} seconds..."
+            )
             time.sleep(RETRY_INTERVAL)
         else:
             logger.error("Max retries reached. Exiting.")
@@ -85,7 +87,7 @@ class Price(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     symbol = Column(String, nullable=False, index=True)  # Symbol of the financial instrument
-    value = Column(Float, nullable=False)  # Changed to Float
+    value = Column(Float, nullable=False)
     timestamp = Column(DateTime, nullable=False)  # Correct data type
 
 
@@ -108,27 +110,29 @@ class ChatRequest(BaseModel):
 
 # Utility function to get prices from the database and return as a DataFrame
 def get_price_data(symbol: str) -> pd.DataFrame:
-    # Calculate the datetime for 1 month ago
-    one_month_ago = datetime.now() - timedelta(days=10)
+    # Fetch data from 60 days ago
+    start_date = datetime.now() - timedelta(days=60)
+    logger.debug(f"Fetching price data for symbol {symbol} since {start_date}")
 
     session = SessionLocal()
     try:
-        # Query prices for the given symbol and filter by timestamp >= one_month_ago
+        # Modify query for case-insensitive symbol matching
         prices = session.query(Price).filter(
-            Price.symbol == symbol,
-            Price.timestamp >= one_month_ago
+            func.lower(Price.symbol) == symbol.lower(),
+            Price.timestamp >= start_date
         ).order_by(Price.timestamp).all()
 
-        logger.debug(f"Fetched {len(prices)} price records for symbol {symbol} since {one_month_ago}.")
+        logger.debug(f"Number of price records retrieved: {len(prices)}")
+
         if not prices:
-            logger.warning(f"No price data found for symbol: {symbol} in the last month.")
-            return pd.DataFrame()  # Return empty DataFrame if no data
+            logger.warning(f"No price data found for symbol: {symbol} in the specified date range.")
+            return pd.DataFrame()
 
         # Convert queried data into a DataFrame
         data = pd.DataFrame([{
-            'symbol': price.symbol,
+            'timestamp': price.timestamp,
             'value': price.value,
-            'timestamp': price.timestamp
+            'symbol': price.symbol
         } for price in prices])
 
         logger.debug(f"Data fetched for symbol {symbol}: {data.head()}")
@@ -146,18 +150,12 @@ def calculate_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
     data.set_index('timestamp', inplace=True)
     logger.debug("Calculating technical indicators.")
 
-    # Calculate RSI
+    # Calculate EMAs
+    data['ema_9'] = ta.trend.EMAIndicator(close=data['value'], window=9).ema_indicator()
+    data['ema_21'] = ta.trend.EMAIndicator(close=data['value'], window=21).ema_indicator()
+
+    # Calculate RSI for confirmation (optional)
     data['rsi'] = ta.momentum.RSIIndicator(close=data['value'], window=14).rsi()
-
-    # Calculate Moving Averages
-    data['ma_50'] = data['value'].rolling(window=50).mean()
-    data['ma_200'] = data['value'].rolling(window=200).mean()
-
-    # Calculate Bollinger Bands (as an example of support and resistance)
-    bollinger = ta.volatility.BollingerBands(close=data['value'], window=20, window_dev=2)
-    data['bb_middle'] = bollinger.bollinger_mavg()
-    data['bb_upper'] = bollinger.bollinger_hband()
-    data['bb_lower'] = bollinger.bollinger_lband()
 
     data.reset_index(inplace=True)
     logger.debug("Technical indicators calculated.")
@@ -171,24 +169,15 @@ def train_model(data: pd.DataFrame) -> GradientBoostingRegressor:
         raise ValueError("Insufficient data to train the model.")
 
     # Prepare features and target
-    initial_length = len(data)
     data.dropna(inplace=True)  # Drop rows with NaN values resulting from indicator calculations
-    logger.debug(f"Data length after dropping NaNs: {len(data)} (Initial: {initial_length})")
-
-    if 'target' in data.columns:
-        data.drop(columns=['target'], inplace=True)
 
     # Shift the target variable to predict the next price
     data['target'] = data['value'].shift(-1)
     data.dropna(inplace=True)
-    logger.debug(f"Data length after shifting target: {len(data)}")
 
-    features = ['value', 'rsi', 'ma_50', 'ma_200', 'bb_middle', 'bb_upper', 'bb_lower']
+    features = ['value', 'ema_9', 'ema_21', 'rsi']
     X = data[features]
     y = data['target']
-
-    logger.debug(f"Feature set size: {X.shape}")
-    logger.debug(f"Target set size: {y.shape}")
 
     # Check if there are enough samples
     if len(X) < 10:
@@ -197,8 +186,6 @@ def train_model(data: pd.DataFrame) -> GradientBoostingRegressor:
 
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-    logger.debug(f"Training set size: {X_train.shape[0]} samples")
-    logger.debug(f"Test set size: {X_test.shape[0]} samples")
 
     if X_train.empty or y_train.empty:
         logger.error("Training set is empty after split. Cannot train model.")
@@ -208,50 +195,51 @@ def train_model(data: pd.DataFrame) -> GradientBoostingRegressor:
     model = GradientBoostingRegressor()
     model.fit(X_train, y_train)
 
-    # Save the model
-    joblib.dump(model, 'price_prediction_model.pkl')
-
+    # Save the model with features
+    model_info = {
+        'model': model,
+        'features': features
+    }
+    joblib.dump(model_info, 'price_prediction_model.pkl')
     logger.info("Model trained and saved successfully.")
     return model
 
 
 # Function to load the trained model
-def load_model() -> GradientBoostingRegressor:
+def load_model() -> (GradientBoostingRegressor, list):
     if not os.path.exists('price_prediction_model.pkl'):
         logger.error("Model file not found. Please train the model first.")
         raise FileNotFoundError("Model file not found.")
-    model = joblib.load('price_prediction_model.pkl')
-    return model
+    model_info = joblib.load('price_prediction_model.pkl')
+    return model_info['model'], model_info['features']
 
 
-# Function to generate trading signal based on predictions and indicators
+# Function to generate trading signal based on Moving Average Crossover Strategy
 def generate_trading_signal(current_price: float, predicted_price: float, indicators: dict) -> str:
     action = 'hold'
 
+    ema_9 = indicators.get('ema_9')
+    ema_21 = indicators.get('ema_21')
+    previous_ema_9 = indicators.get('previous_ema_9')
+    previous_ema_21 = indicators.get('previous_ema_21')
     rsi = indicators.get('rsi')
-    price_difference = predicted_price - current_price
-    price_difference_percentage = (price_difference / current_price) * 100
 
     logger.info(f"Current Price: {current_price}")
     logger.info(f"Predicted Price: {predicted_price}")
-    logger.info(f"Price Difference (%): {price_difference_percentage:.2f}%")
+    logger.info(f"EMA 9: {ema_9}, EMA 21: {ema_21}")
+    logger.info(f"Previous EMA 9: {previous_ema_9}, Previous EMA 21: {previous_ema_21}")
     logger.info(f"RSI: {rsi}")
 
-    # Thresholds
-    significant_move = 0.2  # Adjust this threshold as needed
-    overbought = 70
-    oversold = 30
-
-    if predicted_price > current_price:
-        if price_difference_percentage >= significant_move and rsi and rsi > overbought:
-            action = 'buy-stop'
-        elif rsi and rsi < oversold:
-            action = 'buy-limit'
-    elif predicted_price < current_price:
-        if abs(price_difference_percentage) >= significant_move and rsi and rsi < oversold:
-            action = 'sell-stop'
-        elif rsi and rsi > overbought:
-            action = 'sell-limit'
+    # Identify crossover
+    if previous_ema_9 is not None and previous_ema_21 is not None:
+        # Buy Signal: EMA 9 crosses above EMA 21
+        if previous_ema_9 < previous_ema_21 and ema_9 > ema_21:
+            if rsi and rsi > 50:
+                action = 'buy'
+        # Sell Signal: EMA 9 crosses below EMA 21
+        elif previous_ema_9 > previous_ema_21 and ema_9 < ema_21:
+            if rsi and rsi < 50:
+                action = 'sell'
 
     logger.info(f"Generated Action: {action}")
     return action
@@ -283,6 +271,10 @@ async def add_price(price: Request, db: Session = Depends(get_db)):
         value = data["value"]
         timestamp = data["timestamp"]
 
+        # Convert timestamp to datetime object
+        if isinstance(timestamp, str):
+            timestamp = datetime.fromisoformat(timestamp)
+
         # Save to database
         price_record = Price(
             symbol=symbol,
@@ -293,13 +285,12 @@ async def add_price(price: Request, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(price_record)
 
-       
         return {
             "status": "success",
             "data": {
                 "symbol": symbol,
                 "value": value,
-                "timestamp": timestamp
+                "timestamp": timestamp.isoformat()
             }
         }
     except json.JSONDecodeError as e:
@@ -309,7 +300,7 @@ async def add_price(price: Request, db: Session = Depends(get_db)):
         print(f"KeyError: {str(e)}")
         raise HTTPException(status_code=422, detail=f"Missing key in JSON: {str(e)}")
     except Exception as e:
-        print(f"Unexpected Error: {str(e)}")
+        logger.error(f"Unexpected Error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
 
@@ -413,132 +404,107 @@ async def chat_with_model(chat_request: Request):
         logger.info(f"Fetched {len(data)} records for symbol {symbol}.")
         data = calculate_technical_indicators(data)
         logger.info("Technical indicators calculated.")
-        # Convert DataFrame to JSON-compatible list of dictionaries
-        result = data.to_dict(orient="records")
 
-        # Load or train the model
-        if not os.path.exists('price_prediction_model.pkl'):
-            logger.info("Model file not found. Training model...")
-            try:
-                model = train_model(data)
-                logger.info("Model trained successfully.")
-            except ValueError as ve:
-                logger.error(f"Model training failed: {str(ve)}")
-                raise HTTPException(status_code=400, detail=str(ve))
-        else:
-            logger.info("Loading existing model...")
-            model = load_model()
-            logger.info("Model loaded successfully.")
+        # Handle NaN values
+        data.fillna(method='ffill', inplace=True)
+        data.dropna(inplace=True)
+
+        # Add previous EMAs for crossover detection
+        data['previous_ema_9'] = data['ema_9'].shift(1)
+        data['previous_ema_21'] = data['ema_21'].shift(1)
+        data.dropna(inplace=True)
+
+        # Ensure there is enough data after processing
+        if data.empty or len(data) < 2:
+            logger.error(f"Not enough data points available after processing. Data length: {len(data)}")
+            raise HTTPException(status_code=400, detail="Not enough data points available for analysis.")
 
         # Prepare the latest data point for prediction
         latest_data = data.iloc[-1]
-        features = ['value', 'rsi', 'ma_50', 'ma_200', 'bb_middle', 'bb_upper', 'bb_lower']
+        features = ['value', 'ema_9', 'ema_21', 'rsi']
+
+        # Load or train the model
+        try:
+            model, model_features = load_model()
+            if model_features != features:
+                logger.warning("Feature mismatch between model and current features. Retraining the model.")
+                model = train_model(data)
+        except FileNotFoundError:
+            logger.info("Model file not found. Training model...")
+            model = train_model(data)
+
+        # Convert features to numeric data types
+        for feature in features:
+            latest_data[feature] = pd.to_numeric(latest_data[feature], errors='coerce')
+
+        # After conversion, check for NaNs introduced by coercion
+        if latest_data[features].isnull().any():
+            missing_features = latest_data[features].isnull()
+            logger.error(f"Missing or invalid values in features after conversion: {missing_features[missing_features].index.tolist()}")
+            raise HTTPException(status_code=400, detail="Invalid data in features after type conversion.")
+
         input_data = latest_data[features].values.reshape(1, -1)
-        logger.debug(f"Input data for prediction: {input_data}")
+
+        # Ensure input_data is of type float64
+        input_data = input_data.astype(np.float64)
+
+        # Now check for NaNs
+        if np.isnan(input_data).any():
+            logger.error("Input data for prediction contains NaN values after type conversion.")
+            raise HTTPException(status_code=400, detail="Input data for prediction contains NaN values.")
 
         # Make prediction
         predicted_price = model.predict(input_data)[0]
         current_price = latest_data['value']
         logger.info(f"Predicted price: {predicted_price}, Current price: {current_price}")
 
-        # Generate trading signal
+        # Prepare indicators for signal generation
         indicators = latest_data.to_dict()
+        # Include previous EMAs for crossover detection
+        previous_data = data.iloc[-2] if len(data) >= 2 else latest_data
+        indicators['previous_ema_9'] = previous_data['ema_9']
+        indicators['previous_ema_21'] = previous_data['ema_21']
+
+        # Generate trading signal
         action = generate_trading_signal(current_price, predicted_price, indicators)
         logger.info(f"Generated action: {action}")
 
         # Prepare Stop Loss and Take Profit
         sl = None
         tp = None
-        if action in ['buy-limit', 'buy-stop']:
-            sl = predicted_price * 0.995  # Stop Loss at 0.5% below entry
-            tp = predicted_price * 1.005  # Take Profit at 0.5% above entry
-        elif action in ['sell-limit', 'sell-stop']:
-            sl = predicted_price * 1.005  # Stop Loss at 0.5% above entry
-            tp = predicted_price * 0.995  # Take Profit at 0.5% below entry
+
+        # Determine recent swing highs and lows for SL and TP
+        recent_high = data['value'].rolling(window=5).max().iloc[-1]
+        recent_low = data['value'].rolling(window=5).min().iloc[-1]
+
+        if action == 'buy':
+            sl = recent_low  # Stop Loss below recent swing low
+            tp = current_price + 2 * (current_price - sl)  # 1:2 risk-to-reward ratio
+        elif action == 'sell':
+            sl = recent_high  # Stop Loss above recent swing high
+            tp = current_price - 2 * (sl - current_price)  # 1:2 risk-to-reward ratio
 
         response = {
             "action": action,
-            "entry": f"{predicted_price:.5f}" if action != 'hold' else None,
+            "entry": f"{current_price:.5f}" if action != 'hold' else None,
             "sl": f"{sl:.5f}" if sl else None,
             "tp": f"{tp:.5f}" if tp else None
         }
 
         logger.info(f"Response prepared: {response}")
         return {"status": "success", "data": response}
+
     except json.JSONDecodeError as e:
         print(f"JSON Decode Error: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Invalid JSON format: {str(e)}")
     except KeyError as e:
         print(f"KeyError: {str(e)}")
         raise HTTPException(status_code=422, detail=f"Missing key in JSON: {str(e)}")
+    except HTTPException as http_exc:
+        raise http_exc  # Re-raise HTTP exceptions to be handled by FastAPI
     except Exception as e:
-        print(f"Unexpected Error: {str(e)}")
+        logger.error(f"Error processing request: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
-
-        # # Fetch and preprocess data
-        # data = get_price_data(symbol)
-        # if data.empty:
-        #     logger.error(f"No price data found for symbol: {symbol}")
-        #     raise HTTPException(status_code=404, detail=f"No price data found for symbol: {symbol}")
-        # logger.info(f"Fetched {len(data)} records for symbol {symbol}.")
-        # data = calculate_technical_indicators(data)
-        # logger.info("Technical indicators calculated.")
-        #
-        # # Load or train the model
-        # if not os.path.exists('price_prediction_model.pkl'):
-        #     logger.info("Model file not found. Training model...")
-        #     try:
-        #         model = train_model(data)
-        #         logger.info("Model trained successfully.")
-        #     except ValueError as ve:
-        #         logger.error(f"Model training failed: {str(ve)}")
-        #         raise HTTPException(status_code=400, detail=str(ve))
-        # else:
-        #     logger.info("Loading existing model...")
-        #     model = load_model()
-        #     logger.info("Model loaded successfully.")
-        #
-        # # Prepare the latest data point for prediction
-        # latest_data = data.iloc[-1]
-        # features = ['value', 'rsi', 'ma_50', 'ma_200', 'bb_middle', 'bb_upper', 'bb_lower']
-        # input_data = latest_data[features].values.reshape(1, -1)
-        # logger.debug(f"Input data for prediction: {input_data}")
-        #
-        # # Make prediction
-        # predicted_price = model.predict(input_data)[0]
-        # current_price = latest_data['value']
-        # logger.info(f"Predicted price: {predicted_price}, Current price: {current_price}")
-        #
-        # # Generate trading signal
-        # indicators = latest_data.to_dict()
-        # action = generate_trading_signal(current_price, predicted_price, indicators)
-        # logger.info(f"Generated action: {action}")
-        #
-        # # Prepare Stop Loss and Take Profit
-        # sl = None
-        # tp = None
-        # if action in ['buy-limit', 'buy-stop']:
-        #     sl = predicted_price * 0.995  # Stop Loss at 0.5% below entry
-        #     tp = predicted_price * 1.005  # Take Profit at 0.5% above entry
-        # elif action in ['sell-limit', 'sell-stop']:
-        #     sl = predicted_price * 1.005  # Stop Loss at 0.5% above entry
-        #     tp = predicted_price * 0.995  # Take Profit at 0.5% below entry
-        #
-        # response = {
-        #     "action": action,
-        #     "entry": f"{predicted_price:.5f}" if action != 'hold' else None,
-        #     "sl": f"{sl:.5f}" if sl else None,
-        #     "tp": f"{tp:.5f}" if tp else None
-        # }
-        #
-        # logger.info(f"Response prepared: {response}")
-        # return {"status": "success", "data": response}
-    #     return {"status": "success"}
-    # except HTTPException as http_exc:
-    #     raise http_exc  # Re-raise HTTP exceptions to be handled by FastAPI
-    # except Exception as e:
-    #     logger.error(f"Error processing request: {str(e)}", exc_info=True)
-    #     raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
 
 # Health check endpoint
