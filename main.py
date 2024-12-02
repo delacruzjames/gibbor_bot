@@ -1,7 +1,7 @@
 import os
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Request
@@ -108,18 +108,29 @@ class ChatRequest(BaseModel):
 
 # Utility function to get prices from the database and return as a DataFrame
 def get_price_data(symbol: str) -> pd.DataFrame:
+    # Calculate the datetime for 1 month ago
+    one_month_ago = datetime.now() - timedelta(days=10)
+
     session = SessionLocal()
     try:
-        prices = session.query(Price).filter(Price.symbol == symbol).order_by(Price.timestamp).all()
-        logger.debug(f"Fetched {len(prices)} price records for symbol {symbol}.")
+        # Query prices for the given symbol and filter by timestamp >= one_month_ago
+        prices = session.query(Price).filter(
+            Price.symbol == symbol,
+            Price.timestamp >= one_month_ago
+        ).order_by(Price.timestamp).all()
+
+        logger.debug(f"Fetched {len(prices)} price records for symbol {symbol} since {one_month_ago}.")
         if not prices:
-            logger.warning(f"No price data found for symbol: {symbol}")
+            logger.warning(f"No price data found for symbol: {symbol} in the last month.")
             return pd.DataFrame()  # Return empty DataFrame if no data
+
+        # Convert queried data into a DataFrame
         data = pd.DataFrame([{
             'symbol': price.symbol,
             'value': price.value,
             'timestamp': price.timestamp
         } for price in prices])
+
         logger.debug(f"Data fetched for symbol {symbol}: {data.head()}")
         return data
     finally:
@@ -385,20 +396,25 @@ async def clear_prices(db: Session = Depends(get_db)):
 
 
 # Endpoint to interact with the model and get trading recommendations
-@app.post("/chat", response_model=dict)
-async def chat_with_model(chat_request: ChatRequest):
-    try:
-        symbol = chat_request.symbol
-        logger.info(f"Received symbol: {symbol}")
+@app.post("/open", response_model=dict)
+async def chat_with_model(chat_request: Request):
+    raw_body = await chat_request.body()
+    print(f"Raw Body Received: {raw_body}")
 
-        # Fetch and preprocess data
+    try:
+        decoded_body = raw_body.decode("utf-8").strip()
+        cleaned_body = decoded_body.replace("\x00", "")
+        symbol = json.loads(cleaned_body)["symbol"]
         data = get_price_data(symbol)
+
         if data.empty:
             logger.error(f"No price data found for symbol: {symbol}")
             raise HTTPException(status_code=404, detail=f"No price data found for symbol: {symbol}")
         logger.info(f"Fetched {len(data)} records for symbol {symbol}.")
         data = calculate_technical_indicators(data)
         logger.info("Technical indicators calculated.")
+        # Convert DataFrame to JSON-compatible list of dictionaries
+        result = data.to_dict(orient="records")
 
         # Load or train the model
         if not os.path.exists('price_prediction_model.pkl'):
@@ -449,12 +465,80 @@ async def chat_with_model(chat_request: ChatRequest):
 
         logger.info(f"Response prepared: {response}")
         return {"status": "success", "data": response}
-
-    except HTTPException as http_exc:
-        raise http_exc  # Re-raise HTTP exceptions to be handled by FastAPI
+    except json.JSONDecodeError as e:
+        print(f"JSON Decode Error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid JSON format: {str(e)}")
+    except KeyError as e:
+        print(f"KeyError: {str(e)}")
+        raise HTTPException(status_code=422, detail=f"Missing key in JSON: {str(e)}")
     except Exception as e:
-        logger.error(f"Error processing request: {str(e)}", exc_info=True)
+        print(f"Unexpected Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+
+        # # Fetch and preprocess data
+        # data = get_price_data(symbol)
+        # if data.empty:
+        #     logger.error(f"No price data found for symbol: {symbol}")
+        #     raise HTTPException(status_code=404, detail=f"No price data found for symbol: {symbol}")
+        # logger.info(f"Fetched {len(data)} records for symbol {symbol}.")
+        # data = calculate_technical_indicators(data)
+        # logger.info("Technical indicators calculated.")
+        #
+        # # Load or train the model
+        # if not os.path.exists('price_prediction_model.pkl'):
+        #     logger.info("Model file not found. Training model...")
+        #     try:
+        #         model = train_model(data)
+        #         logger.info("Model trained successfully.")
+        #     except ValueError as ve:
+        #         logger.error(f"Model training failed: {str(ve)}")
+        #         raise HTTPException(status_code=400, detail=str(ve))
+        # else:
+        #     logger.info("Loading existing model...")
+        #     model = load_model()
+        #     logger.info("Model loaded successfully.")
+        #
+        # # Prepare the latest data point for prediction
+        # latest_data = data.iloc[-1]
+        # features = ['value', 'rsi', 'ma_50', 'ma_200', 'bb_middle', 'bb_upper', 'bb_lower']
+        # input_data = latest_data[features].values.reshape(1, -1)
+        # logger.debug(f"Input data for prediction: {input_data}")
+        #
+        # # Make prediction
+        # predicted_price = model.predict(input_data)[0]
+        # current_price = latest_data['value']
+        # logger.info(f"Predicted price: {predicted_price}, Current price: {current_price}")
+        #
+        # # Generate trading signal
+        # indicators = latest_data.to_dict()
+        # action = generate_trading_signal(current_price, predicted_price, indicators)
+        # logger.info(f"Generated action: {action}")
+        #
+        # # Prepare Stop Loss and Take Profit
+        # sl = None
+        # tp = None
+        # if action in ['buy-limit', 'buy-stop']:
+        #     sl = predicted_price * 0.995  # Stop Loss at 0.5% below entry
+        #     tp = predicted_price * 1.005  # Take Profit at 0.5% above entry
+        # elif action in ['sell-limit', 'sell-stop']:
+        #     sl = predicted_price * 1.005  # Stop Loss at 0.5% above entry
+        #     tp = predicted_price * 0.995  # Take Profit at 0.5% below entry
+        #
+        # response = {
+        #     "action": action,
+        #     "entry": f"{predicted_price:.5f}" if action != 'hold' else None,
+        #     "sl": f"{sl:.5f}" if sl else None,
+        #     "tp": f"{tp:.5f}" if tp else None
+        # }
+        #
+        # logger.info(f"Response prepared: {response}")
+        # return {"status": "success", "data": response}
+    #     return {"status": "success"}
+    # except HTTPException as http_exc:
+    #     raise http_exc  # Re-raise HTTP exceptions to be handled by FastAPI
+    # except Exception as e:
+    #     logger.error(f"Error processing request: {str(e)}", exc_info=True)
+    #     raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
 
 # Health check endpoint
