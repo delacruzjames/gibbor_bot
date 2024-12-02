@@ -2,7 +2,7 @@ import os
 import time
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Tuple
 
 from fastapi import FastAPI, Depends, HTTPException, Request
 from sqlalchemy import Column, Integer, String, Float, create_engine, DateTime, func
@@ -206,12 +206,20 @@ def train_model(data: pd.DataFrame) -> GradientBoostingRegressor:
 
 
 # Function to load the trained model
-def load_model() -> (GradientBoostingRegressor, list):
+def load_model() -> Tuple[GradientBoostingRegressor, list]:
     if not os.path.exists('price_prediction_model.pkl'):
         logger.error("Model file not found. Please train the model first.")
         raise FileNotFoundError("Model file not found.")
     model_info = joblib.load('price_prediction_model.pkl')
-    return model_info['model'], model_info['features']
+
+    # Add debug statements
+    logger.debug(f"Loaded model_info type: {type(model_info)}")
+    if isinstance(model_info, dict):
+        logger.debug(f"Model info keys: {model_info.keys()}")
+        return model_info['model'], model_info['features']
+    else:
+        logger.error("Loaded model_info is not a dictionary.")
+        raise ValueError("Loaded model_info is not a dictionary. Please retrain the model.")
 
 
 # Function to generate trading signal based on Moving Average Crossover Strategy
@@ -406,7 +414,7 @@ async def chat_with_model(chat_request: Request):
         logger.info("Technical indicators calculated.")
 
         # Handle NaN values
-        data.fillna(method='ffill', inplace=True)
+        data.ffill(inplace=True)
         data.dropna(inplace=True)
 
         # Add previous EMAs for crossover detection
@@ -429,9 +437,11 @@ async def chat_with_model(chat_request: Request):
             if model_features != features:
                 logger.warning("Feature mismatch between model and current features. Retraining the model.")
                 model = train_model(data)
-        except FileNotFoundError:
-            logger.info("Model file not found. Training model...")
+                model_features = features  # Update model_features after retraining
+        except (FileNotFoundError, ValueError) as e:
+            logger.info(f"Model file not found or invalid. Training model... ({e})")
             model = train_model(data)
+            model_features = features  # Update model_features after retraining
 
         # Convert features to numeric data types
         for feature in features:
