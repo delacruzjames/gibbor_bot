@@ -254,40 +254,52 @@ async def log_exceptions_middleware(request: Request, call_next):
         logger.error(f"Unhandled exception: {e}", exc_info=True)
         return JSONResponse(content={"error": "Internal Server Error"}, status_code=500)
 
+import json
 
 # Endpoint to add a price record
 @app.post("/prices", response_model=dict)
-async def add_price(price: PriceCreate, db: Session = Depends(get_db)):
+async def add_price(price: Request, db: Session = Depends(get_db)):
+    raw_body = await price.body()
+
     try:
-        logger.info(f"Received Price Data: {price}")
+        # Decode and parse JSON
+        decoded_body = raw_body.decode("utf-8").strip()
+        cleaned_body = decoded_body.replace("\x00", "")
+        data = json.loads(cleaned_body)
+
+        # Access dictionary keys
+        symbol = data["symbol"]
+        value = data["value"]
+        timestamp = data["timestamp"]
 
         # Save to database
         price_record = Price(
-            symbol=price.symbol,
-            value=price.value,
-            timestamp=price.timestamp
+            symbol=symbol,
+            value=value,
+            timestamp=timestamp
         )
         db.add(price_record)
         db.commit()
         db.refresh(price_record)
 
-        # Return success response
+       
         return {
             "status": "success",
-            "price": {
-                "id": price_record.id,
-                "symbol": price_record.symbol,
-                "value": price_record.value,
-                "timestamp": price_record.timestamp.isoformat()
+            "data": {
+                "symbol": symbol,
+                "value": value,
+                "timestamp": timestamp
             }
         }
-    except ValidationError as e:
-        print("Validation error:", e.json())
-        return {"status": "error", "message": e.errors()}
-
+    except json.JSONDecodeError as e:
+        print(f"JSON Decode Error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid JSON format: {str(e)}")
+    except KeyError as e:
+        print(f"KeyError: {str(e)}")
+        raise HTTPException(status_code=422, detail=f"Missing key in JSON: {str(e)}")
     except Exception as e:
-        logger.info(f"Error processing request: {str(e)}")
-        raise HTTPException(status_code=422, detail=f"Error processing request: {str(e)}")
+        print(f"Unexpected Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
 
 # Endpoint to add a trade
