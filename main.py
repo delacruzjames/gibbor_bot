@@ -439,7 +439,7 @@ async def chat_with_model(chat_request: Request):
             raise HTTPException(status_code=400, detail="Not enough data points available for analysis.")
 
         # Prepare the latest data point for prediction
-        latest_data = data.iloc[-1]
+        latest_data = data.iloc[-1].copy()
         features = ['value', 'ema_9', 'ema_21', 'rsi']
 
         # Load or train the model
@@ -454,25 +454,32 @@ async def chat_with_model(chat_request: Request):
             model = train_model(data)
             model_features = features  # Update model_features after retraining
 
-        # Convert features to numeric data types
+        # Ensure features are numeric
         for feature in features:
             latest_data[feature] = pd.to_numeric(latest_data[feature], errors='coerce')
 
         # After conversion, check for NaNs introduced by coercion
         if latest_data[features].isnull().any():
             missing_features = latest_data[features].isnull()
-            logger.error(f"Missing or invalid values in features after conversion: {missing_features[missing_features].index.tolist()}")
-            raise HTTPException(status_code=400, detail="Invalid data in features after type conversion.")
+            logger.error(
+                f"Missing or invalid values in features after conversion: {missing_features[missing_features].index.tolist()}"
+            )
+            raise HTTPException(
+                status_code=400, detail="Invalid data in features after type conversion."
+            )
 
-        input_data = latest_data[features].values.reshape(1, -1)
+        # Prepare input_data as DataFrame with feature names
+        input_data = pd.DataFrame([latest_data[features]])
 
         # Ensure input_data is of type float64
         input_data = input_data.astype(np.float64)
 
-        # Now check for NaNs
-        if np.isnan(input_data).any():
+        # Now check for NaNs in input_data
+        if input_data.isnull().any().any():
             logger.error("Input data for prediction contains NaN values after type conversion.")
-            raise HTTPException(status_code=400, detail="Input data for prediction contains NaN values.")
+            raise HTTPException(
+                status_code=400, detail="Input data for prediction contains NaN values."
+            )
 
         # Make prediction
         predicted_price = model.predict(input_data)[0]
@@ -526,6 +533,7 @@ async def chat_with_model(chat_request: Request):
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+
 
 
 # Health check endpoint
