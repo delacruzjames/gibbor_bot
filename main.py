@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import OperationalError
 from fastapi.responses import JSONResponse
 from logger import logger
+from dateutil.parser import parse
 
 import pandas as pd
 import numpy as np
@@ -347,17 +348,26 @@ async def get_prices(db: Session = Depends(get_db)):
         prices = db.query(Price).all()
         if not prices:
             return {"prices": []}
-        price_list = [{
-            "id": price.id,
-            "symbol": price.symbol,
-            "value": price.value,
-            "timestamp": price.timestamp.isoformat()
-        } for price in prices]
+        price_list = []
+        for price in prices:
+            timestamp = price.timestamp
+            # Ensure timestamp is a datetime object
+            if isinstance(timestamp, str):
+                try:
+                    timestamp = parse(timestamp)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Error parsing timestamp: {e}")
+                    raise HTTPException(status_code=500, detail="Error parsing timestamp from database")
+            price_list.append({
+                "id": price.id,
+                "symbol": price.symbol,
+                "value": price.value,
+                "timestamp": timestamp.isoformat()
+            })
         return {"prices": price_list}
     except Exception as e:
         logger.error(f"Error retrieving prices: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve prices")
-
 
 # Endpoint to list all trades
 @app.get("/trades", response_model=dict)
