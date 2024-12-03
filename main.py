@@ -27,8 +27,9 @@ PORT = int(os.getenv('PORT', 8000))
 
 # Database URL (use environment variables in production)
 DATABASE_URL = os.getenv("DATABASE_URL")
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql+psycopg2://", "postgresql+psycopg2://", 1)
+
+if DATABASE_URL.startswith('postgres://'):
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set. Please set it in your environment.")
