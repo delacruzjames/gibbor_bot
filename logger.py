@@ -1,21 +1,21 @@
+# logger.py
+
 import logging
-from logging.handlers import RotatingFileHandler
 
-# Configure logger
-log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-log_file = "app.log"  # Path to the log file
+# Initialize Logger
+logger = logging.getLogger("trading_api")
+logger.setLevel(logging.INFO)  # Set to DEBUG for more verbose output
 
-# File handler
-file_handler = RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=2)
-file_handler.setFormatter(log_formatter)
-file_handler.setLevel(logging.ERROR)
+# Create handlers
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)  # Set to DEBUG for more verbose output
 
-# Stream handler (optional: log to console too)
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(log_formatter)
+# Create formatter and add it to the handlers
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+console_handler.setFormatter(formatter)
 
-# Root logger
-logger = logging.getLogger("fastapi_logger")
-logger.setLevel(logging.DEBUG)
-logger.addHandler(file_handler)
-logger.addHandler(stream_handler)
+# Add handlers to the logger
+if not logger.hasHandlers():
+    logger.addHandler(console_handler)
