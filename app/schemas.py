@@ -10,7 +10,7 @@ class TradeData(BaseModel):
     lot_size: float
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "symbol": "EURUSD",
                 "action": "buy",
@@ -24,7 +24,7 @@ class PriceCreate(BaseModel):
     timestamp: datetime
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "symbol": "EURUSD",
                 "value": 1.23456,
@@ -36,7 +36,7 @@ class ChatRequest(BaseModel):
     symbol: Optional[str] = Field(default="EURUSD")
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "symbol": "EURUSD"
             }
@@ -49,7 +49,7 @@ class TradeResponse(BaseModel):
     lot_size: float
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class PriceResponse(BaseModel):
     id: int
@@ -58,7 +58,7 @@ class PriceResponse(BaseModel):
     timestamp: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class OpenResponse(BaseModel):
     action: str
@@ -67,7 +67,7 @@ class OpenResponse(BaseModel):
     tp: Optional[str]
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "action": "buy",
                 "entry": "1.23456",

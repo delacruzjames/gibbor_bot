@@ -15,7 +15,7 @@ router = APIRouter(
     tags=["open"]
 )
 
-@router.post("/", response_model=schemas.APIResponse)
+@router.post("", response_model=schemas.APIResponse)
 async def chat_with_model(chat_request: Request, db: Session = Depends(get_db)):
     """
     Processes a chat request to generate trading recommendations.

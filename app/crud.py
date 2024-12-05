@@ -27,7 +27,7 @@ def create_trade(db: Session, trade: TradeData) -> TradeRecord:
     return trade_record
 
 
-def create_price(db: Session, price: PriceCreate) -> Price:
+def create_price(db: Session, price: dict) -> Price:
     """
     Creates a new price record in the database.
 
@@ -39,9 +39,9 @@ def create_price(db: Session, price: PriceCreate) -> Price:
         Price: The created price record.
     """
     price_record = Price(
-        symbol=price.symbol,
-        value=price.value,
-        timestamp=price.timestamp
+        symbol=price["symbol"],
+        value=price["value"],
+        timestamp=price["timestamp"]
     )
     db.add(price_record)
     db.commit()

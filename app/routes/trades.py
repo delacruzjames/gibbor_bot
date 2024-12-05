@@ -12,7 +12,7 @@ router = APIRouter(
     tags=["trades"]
 )
 
-@router.post("/", response_model=schemas.APIResponse)
+@router.post("", response_model=schemas.APIResponse)
 async def add_trade(trade: schemas.TradeData, db: Session = Depends(get_db)):
     """
     Adds a new trade record to the database.
@@ -33,7 +33,7 @@ async def add_trade(trade: schemas.TradeData, db: Session = Depends(get_db)):
         logger.error(f"Error processing trade data: {e}", exc_info=True)
         raise HTTPException(status_code=422, detail="Invalid trade data.")
 
-@router.get("/", response_model=schemas.APIResponse)
+@router.get("", response_model=schemas.APIResponse)
 async def get_trades(db: Session = Depends(get_db)):
     """
     Retrieves all trade records from the database.

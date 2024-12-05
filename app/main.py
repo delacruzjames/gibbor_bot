@@ -8,7 +8,8 @@ from logger import logger
 app = FastAPI(
     title="Trading API",
     description="API for managing trades and price data, and generating trading signals.",
-    version="1.0.0"
+    version="1.0.0",
+    strict_slashes=False
 )
 
 # Include API routers

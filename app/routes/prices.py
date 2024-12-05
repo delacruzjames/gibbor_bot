@@ -1,23 +1,42 @@
 # app/routes/prices.py
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import List
 from app import schemas, crud
 from app.database import get_db
 from logger import logger
+import json
 
 router = APIRouter(
     prefix="/prices",
     tags=["prices"]
 )
 
-@router.post("/", response_model=schemas.APIResponse)
-async def add_price(price: schemas.PriceCreate, db: Session = Depends(get_db)):
+@router.post("", response_model=schemas.APIResponse)
+async def add_price(price: Request, db: Session = Depends(get_db)):
     """
     Adds a new price record to the database.
     """
+    raw_body = await price.body()
     try:
+        # Decode and parse JSON
+        decoded_body = raw_body.decode("utf-8").strip()
+        cleaned_body = decoded_body.replace("\x00", "")
+        data = json.loads(cleaned_body)
+
+        # Access dictionary keys
+        symbol = data["symbol"]
+        value = data["value"]
+        timestamp = data["timestamp"]
+
+        # Create a price dictionary
+        price = {
+            "symbol": symbol,
+            "value": value,
+            "timestamp": timestamp
+        }
+
         logger.info(f"Received Price Data: {price}")
         price_record = crud.create_price(db, price)
         return {
@@ -33,7 +52,7 @@ async def add_price(price: schemas.PriceCreate, db: Session = Depends(get_db)):
         logger.error(f"Error processing price data: {e}", exc_info=True)
         raise HTTPException(status_code=422, detail="Invalid price data.")
 
-@router.get("/", response_model=schemas.APIResponse)
+@router.get("", response_model=schemas.APIResponse)
 async def get_prices(db: Session = Depends(get_db)):
     """
     Retrieves all price records from the database.
