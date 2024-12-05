@@ -110,10 +110,9 @@ class ChatRequest(BaseModel):
     symbol: Optional[str] = Field(default="EURUSD")
 
 
-# Utility function to get prices from the database and return as a DataFrame
 def get_price_data(symbol: str) -> pd.DataFrame:
-    # Fetch data from 60 days ago
-    start_date = datetime.now() - timedelta(days=60)
+    # Dynamically calculate 120 days ago from the current date
+    start_date = datetime.now() - timedelta(days=120)
     logger.debug(f"Fetching price data for symbol {symbol} since {start_date}")
 
     session = SessionLocal()
